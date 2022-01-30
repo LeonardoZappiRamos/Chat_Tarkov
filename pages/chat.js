@@ -1,22 +1,61 @@
 import { Box, Text, TextField, Image, Button } from '@skynexui/components';
 import React from 'react';
 import appConfig from '../config.json';
+import { useRouter } from 'next/router';
+import { supabase } from '../service/client'
+import { ButtonSendSticker } from '../components/Stikers'
+
+function escutaMensagensEmTempoReal(adicionaMensagem) {
+    return supabase
+        .from('chatLog')
+        .on('INSERT', (respostaLive) => {
+            adicionaMensagem(respostaLive.new);
+        })
+        .subscribe();
+}
 
 export default function ChatPage() {
     const [mensagem, setMensagem] = React.useState('');
     const [listaDeMensagens, setListaDeMensagens] = React.useState([]);
+    const {query: {user}} = useRouter()
+
+    React.useEffect(() => {
+        supabase.from('chatLog').select('*').order('id', { ascending: false }).then(({ data }) => {
+            if(data) {
+                setListaDeMensagens( data )
+            }
+        });
+    
+        const subscription = escutaMensagensEmTempoReal((novaMensagem) => {
+            setListaDeMensagens((valorAtualDaLista) => {
+                return [
+                    novaMensagem,
+                    ...valorAtualDaLista,
+                ]
+            });
+        });
+    
+        return () => {
+            subscription.unsubscribe();
+        }
+    }, []);
     
     function handleNovaMensagem(novaMensagem) {
         const mensagem = {
-            id: listaDeMensagens.length + 1,
-            de: 'vanessametonini',
+            de: user,
             texto: novaMensagem,
         };
-        setListaDeMensagens([
-            mensagem,
-            ...listaDeMensagens,
-        ]);
-        setMensagem('');
+    
+        supabase.from('chatLog').insert([mensagem]).then()
+    
+        setMensagem('')
+    }
+
+    function deleteMensagem(mensagem) {
+        supabase.from('chatLog').delete().match({id:mensagem}).then(() => {
+            setListaDeMensagens(listaDeMensagens.filter(m => m.id !== mensagem));
+        })
+        
     }
 
     return (
@@ -65,7 +104,7 @@ export default function ChatPage() {
                         }}
                     >
 
-                        <CardList/>
+                        <CardList name={user}/>
 
                     </Box>
                     
@@ -81,7 +120,7 @@ export default function ChatPage() {
                             padding: '16px',
                         }}
                     >
-                        <MessageList mensagens={listaDeMensagens} setMensagens={setListaDeMensagens} />
+                        <MessageList mensagens={listaDeMensagens} delMensagens={deleteMensagem} />
 
                         <Box
                             as="form"
@@ -115,6 +154,11 @@ export default function ChatPage() {
                                     color: appConfig.theme.colors.neutrals[200],
                                 }}
                             />
+                            <ButtonSendSticker
+                                onStickerClick={(sticker) => {
+                                    handleNovaMensagem(':sticker: ' + sticker);
+                                }}
+                            />
                         </Box>
                     </Box>
                 </Box>
@@ -124,6 +168,14 @@ export default function ChatPage() {
 }
 
 function Header() {
+    const router = useRouter();
+
+    async function signOut() {
+        /* sign the user out */
+        await supabase.auth.signOut();
+        setUser(null);
+    }
+
     return (
         <>
             <Box styleSheet={{ width: '100%', marginBottom: '16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} >
@@ -134,7 +186,10 @@ function Header() {
                     variant='tertiary'
                     colorVariant='neutral'
                     label='Logout'
-                    href="/"
+                    onClick= {()=>{
+                        signOut();
+                        router.back();
+                    }}
                 />
             </Box>
         </>
@@ -183,7 +238,7 @@ function MessageList(props) {
                                     display: 'inline-block',
                                     marginRight: '8px',
                                 }}
-                                src={`https://github.com/vanessametonini.png`}
+                                src={`https://github.com/${mensagem.de}.png`}
                             />
                             <Text tag="strong">
                                 {mensagem.de}
@@ -205,14 +260,18 @@ function MessageList(props) {
                                 size= 'sm'
                                 iconName='trash'
                                 onClick= {() => {
-                                    let novaLista = props.mensagens.filter(props => props.id != mensagem.id)
-                                    /* console.log(novaLista) */
-                                    props.setMensagens(novaLista)
+                                    props.delMensagens(mensagem.id)
                                 }}
                             ></Button>
                             </Box>  
                         </Box>
-                        {mensagem.texto}  
+                        {mensagem.texto.startsWith(':sticker:')
+                        ? (
+                            <Image src={mensagem.texto.replace(':sticker:', '')} />
+                        )
+                        : (
+                            mensagem.texto
+                        )} 
                     </Text>
                 );
             })}
@@ -220,7 +279,7 @@ function MessageList(props) {
     )
 }
 
-function CardList(){
+function CardList(props){
     return (
         <>
             <Box 
@@ -238,7 +297,7 @@ function CardList(){
                         display: 'inline-block',
                         marginRight: '5px',
                     }}
-                    src={`https://github.com/vanessametonini.png`}
+                    src={`https://github.com/${props.name}.png`}
                 />
                 <Box
                     styleSheet={{
@@ -253,7 +312,7 @@ function CardList(){
                     color: appConfig.theme.colors.neutrals[999],
                 }} 
                 >
-                    vanessametonini
+                    {props.name}
                 </Text>
                     <Text variant='heading5'>
                         27/01
